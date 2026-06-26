@@ -7,18 +7,22 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #ffffff; margin: 0; padding: 1.5vw; height: 100vh; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+        
         .header { height: 12vh; display: flex; align-items: center; margin-bottom: 1vh; }
         .header img { height: 8vh; margin-right: 1.5vw; }
         .header-text { line-height: 1.2; }
         .header h1 { font-size: 3.2vh; color: #002f6c; margin: 0; }
-        .company-name { font-size: 2vh; color: #002f6c; font-weight: bold; }
+        .company-name { font-size: 2vh; color: #002f6c; font-weight: bold; line-height: 1.3; }
+
         .main-container { height: 82vh; display: flex; justify-content: space-between; align-items: flex-start; gap: 2vw; }
-        .table-section { width: 50%; height: 100%; overflow-y: auto; }
+        .table-section { width: 50%; height: 100%; overflow-y: auto; background-color: rgba(255, 255, 255, 0.7); border-radius: 8px; padding: 1vh; }
         table { width: 100%; border-collapse: collapse; font-size: 1.6vh; margin-bottom: 2vh; }
         th, td { padding: 0.8vh; border-bottom: 1px solid #ddd; text-align: left; }
         th { background-color: #002f6c; color: white; }
-        .chart-section { width: 45%; height: 80vh; margin-top: -3vh; display: flex; justify-content: center; align-items: center; background-image: url('bg-logo.png'); background-repeat: no-repeat; background-position: center; background-size: contain; opacity: 0.8; }
-        .chart-container { width: 80%; aspect-ratio: 1 / 1; position: relative; background-color: rgba(255, 255, 255, 0.7); border-radius: 50%; }
+        
+        /* 背景画像を PCA3 に設定し、既読性を維持 */
+        .chart-section { width: 45%; height: 80vh; margin-top: -3vh; display: flex; justify-content: center; align-items: center; background-image: url('PCA3.png'); background-repeat: no-repeat; background-position: center; background-size: contain; opacity: 1; }
+        .chart-container { width: 80%; aspect-ratio: 1 / 1; position: relative; background-color: rgba(255, 255, 255, 0.85); border-radius: 50%; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
         .chart-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 100%; }
         .text-line1 { font-size: 2.2vh; color: #d32f2f; font-weight: bold; }
         .text-line2 { font-size: 7vh; color: #002f6c; font-weight: bold; line-height: 1; }
@@ -44,48 +48,49 @@
                 <canvas id="doughnutChart"></canvas>
                 <div class="chart-text">
                     <div class="text-line1">制限区域内 無事故日数目標</div>
-                    <div class="text-line2"><span id="goal-days-display">...</span>日</div>
-                    <div class="text-line3"><span id="current-days-display">...</span>日 継続中！</div>
+                    <div class="text-line2"><span id="goal-days-display">0</span>日</div>
+                    <div class="text-line3"><span id="current-days-display">0</span>日 継続中！</div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRju7RHJ7_5PMGhXmQhcnCs5S6YiAwLY-mVASp8wbhF7l0oCj2PyRN51IAOdoJQGboNAOZiIhNI4mKh/pub?output=csv';
+        const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRju7RHJ7_5PMGhXmQhcnCs5S6YiAwLY-mVASp8wbhF7l0oCj2PyRN51IAOdoJQGboNAOZiIhNI4mKh/pub?gid=2118289952&single=true&output=csv';
         let myChart = null;
 
         async function loadData() {
             try {
                 const response = await fetch(csvUrl + '&t=' + new Date().getTime());
                 const text = await response.text();
-                const data = text.split(/\r?\n/).map(line => line.split(',').map(c => c.trim().replace(/^"(.*)"$/, '$1')));
+                const rows = text.split(/\r?\n/);
+                const data = rows.map(line => line.split(',').map(c => c.trim().replace(/^"(.*)"$/, '$1')));
                 
                 const tableSection = document.getElementById('table-section');
                 tableSection.innerHTML = '';
+                
                 const createTable = (h, r) => {
                     const t = document.createElement('table');
                     t.innerHTML = `<thead><tr>${h.map(i=>`<th>${i}</th>`).join('')}</tr></thead><tbody>${r.map(row=>`<tr>${row.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>`;
                     tableSection.appendChild(t);
                 };
+                
                 if(data[1]) createTable(data[1].slice(0,3), [data[2].slice(0,3)]);
                 if(data[4]) createTable(data[4].slice(0,4), [data[5].slice(0,4)]);
                 
-                // Safety KPIの表作成（A16, A17を除外）
                 if(data[7]) {
                     const kpiRows = data.slice(8).filter(r => 
-                        r[0] && 
-                        r[0] !== "制限区域内無事故日数目標" && 
-                        r[0] !== "継続日数"
+                        r[0] && r[0] !== "制限区域内無事故日数目標" && r[0] !== "継続日数"
                     ).map(r => r.slice(0,3));
                     createTable(data[7].slice(0,3), kpiRows);
                 }
 
-                // 数字取得 (B16, B17)
-                const goal = parseInt(data[15][1]);
-                const cur = parseInt(data[16][1]);
-                document.getElementById('goal-days-display').textContent = goal;
-                document.getElementById('current-days-display').textContent = cur;
+                // 目標(B16)と継続日数(B17)の読み込み
+                const goal = parseInt(data[15][1]); 
+                const cur = parseInt(data[16][1]); 
+                
+                document.getElementById('goal-days-display').textContent = isNaN(goal) ? 0 : goal;
+                document.getElementById('current-days-display').textContent = isNaN(cur) ? 0 : cur;
 
                 const ctx = document.getElementById('doughnutChart').getContext('2d');
                 if(myChart) myChart.destroy();
